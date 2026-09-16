@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MARS JARVIS - Phase 1 OS</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://apis.google.com/js/api.js" async defer></script>
+
+  <style>
+    :root {
+      --bg-color: #030712;
+      --card-bg: rgba(15, 23, 42, 0.65);
+      --border-color: rgba(56, 189, 248, 0.2);
+      --primary-cyan: #38bdf8;
+      --accent-gold: #f59e0b;
+      --neon-glow: 0 0 15px rgba(56, 189, 248, 0.3);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text-main); display: flex; height: 100vh; overflow: hidden; }
+
+    /* HUD Backdrop Layer */
+    #hud-bg {
+      position: absolute; width: 100%; height: 100%; z-index: 0; pointer-events: none;
+      background: radial-gradient(circle at 50% 50%, rgba(14, 165, 233, 0.08) 0%, rgba(3, 7, 18, 0.95) 100%);
+    }
+
+    /* Layout Components */
+    #sidebar {
+      width: 250px; background: var(--card-bg); backdrop-filter: blur(12px);
+      border-right: 1px solid var(--border-color); display: flex; flex-direction: column;
+      z-index: 10; justify-content: space-between; padding: 20px 0;
+    }
+
+    .brand { display: flex; align-items: center; gap: 12px; padding: 0 20px 20px; border-bottom: 1px solid var(--border-color); }
+    .arc-reactor {
+      width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--primary-cyan);
+      box-shadow: var(--neon-glow); animation: pulse 2s infinite alternate;
+    }
+    @keyframes pulse { 0% { transform: scale(0.9); opacity: 0.7; } 100% { transform: scale(1.1); opacity: 1; } }
+
+    .nav-links { list-style: none; margin-top: 20px; }
+    .nav-item {
+      padding: 14px 20px; cursor: pointer; color: var(--text-muted); display: flex;
+      align-items: center; gap: 12px; transition: all 0.3s; font-size: 0.9rem; letter-spacing: 1px;
+    }
+    .nav-item:hover, .nav-item.active { color: var(--primary-cyan); background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--primary-cyan); }
+
+    #main-content { flex: 1; display: flex; flex-direction: column; z-index: 5; padding: 25px; overflow-y: auto; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+
+    .status-badge {
+      display: flex; align-items: center; gap: 8px; font-size: 0.85rem; padding: 6px 14px;
+      border-radius: 20px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color);
+    }
+    .status-indicator { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; }
+    .status-indicator.online { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+
+    /* Glass Panels */
+    .glass-card {
+      background: var(--card-bg); backdrop-filter: blur(12px); border: 1px solid var(--border-color);
+      border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    .grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+    .section-page { display: none; }
+    .section-page.active { display: block; }
+
+    /* Voice Interface Visualizer */
+    .voice-console-card { text-align: center; padding: 40px 20px; }
+    .hud-ring {
+      width: 120px; height: 120px; margin: 0 auto 20px; border-radius: 50%;
+      border: 2px dashed var(--primary-cyan); display: flex; align-items: center; justify-content: center;
+      box-shadow: var(--neon-glow); transition: all 0.3s;
+    }
+    .hud-ring.listening { border-color: var(--accent-gold); animation: spin 4s linear infinite; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+
+    /* UI Controls */
+    button {
+      background: rgba(56, 189, 248, 0.1); border: 1px solid var(--primary-cyan); color: var(--primary-cyan);
+      padding: 10px 18px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: 600;
+    }
+    button:hover { background: var(--primary-cyan); color: #000; box-shadow: var(--neon-glow); }
+    input, textarea, select {
+      width: 100%; background: rgba(3, 7, 18, 0.6); border: 1px solid var(--border-color);
+      color: var(--text-main); padding: 10px; border-radius: 6px; margin-bottom: 10px; outline: none;
+    }
+    input:focus { border-color: var(--primary-cyan); }
+
+    /* Data Lists */
+    .item-list { list-style: none; max-height: 300px; overflow-y: auto; }
+    .item-card {
+      background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color);
+      padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .priority-high { border-left: 4px solid #ef4444; }
+    .priority-med { border-left: 4px solid var(--accent-gold); }
+    .priority-low { border-left: 4px solid #22c55e; }
+  </style>
+</head>
+<body>
+
+  <div id="hud-bg"></div>
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div>
+      <div class="brand">
+        <div class="arc-reactor"></div>
+        <h2 style="font-size: 1.1rem; letter-spacing: 2px;">MARS <span style="color:var(--primary-cyan)">JARVIS</span></h2>
+      </div>
+      <ul class="nav-links">
+        <li class="nav-item active" onclick="switchSection('home')">OVERVIEW</li>
+        <li class="nav-item" onclick="switchSection('notes')">NOTES MODULE</li>
+        <li class="nav-item" onclick="switchSection('tasks')">TASK MATRIX</li>
+        <li class="nav-item" onclick="switchSection('memory')">MEMORY ARCHIVE</li>
+        <li class="nav-item" onclick="switchSection('settings')">SETTINGS</li>
+      </ul>
+    </div>
+    <div style="padding: 0 20px;">
+      <button id="auth-btn" style="width:100%" onclick="handleAuthClick()">CONNECT DRIVE</button>
+    </div>
+  </aside>
+
+  <!-- Main View Area -->
+  <main id="main-content">
+    <header>
+      <h1 id="page-title" style="font-size: 1.4rem; letter-spacing: 1.5px;">SYSTEM OVERVIEW</h1>
+      <div class="status-badge">
+        <div class="status-indicator" id="drive-status-ind"></div>
+        <span id="drive-status-text">DRIVE OFFLINE</span>
+      </div>
+    </header>
+
+    <!-- HOME / VOICE CONSOLE SECTION -->
+    <section id="sec-home" class="section-page active">
+      <div class="grid-2">
+        <div class="glass-card voice-console-card">
+          <div class="hud-ring" id="hud-ring">
+            <span id="mic-status-text" style="font-size: 0.8rem; color: var(--text-muted);">OFFLINE</span>
+          </div>
+          <p id="voice-transcript" style="font-style: italic; color: var(--text-muted); margin-bottom: 20px;">Say "JARVIS..." followed by a command</p>
+          <div style="display: flex; gap: 10px; justify-content: center;">
+            <button onclick="toggleVoiceListening()">PUSH TO TALK</button>
+            <button id="mute-btn" onclick="toggleMute()">MUTE MIC</button>
+          </div>
+        </div>
+
+        <div class="glass-card">
+          <h3>SYSTEM COMMANDS</h3>
+          <ul style="font-size:0.85rem; color:var(--text-muted); margin-top:15px; line-height: 1.8;">
+            <li>• "JARVIS save note [content]"</li>
+            <li>• "JARVIS show notes"</li>
+            <li>• "JARVIS add task [content]"</li>
+            <li>• "JARVIS complete task [title]"</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="glass-card">
+        <h3>COMMAND LOG HISTORY</h3>
+        <ul id="command-log" class="item-list" style="margin-top:10px;"></ul>
+      </div>
+    </section>
+
+    <!-- NOTES SECTION -->
+    <section id="sec-notes" class="section-page">
+      <div class="glass-card">
+        <h3>CREATE NEW NOTE</h3>
+        <input type="text" id="note-title-input" placeholder="Title">
+        <textarea id="note-body-input" rows="3" placeholder="Write contents..."></textarea>
+        <button onclick="createNote()">SAVE TO MEMORY</button>
+      </div>
+
+      <div class="glass-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3>STORED NOTES</h3>
+          <input type="text" id="note-search" placeholder="Search notes..." oninput="renderNotes()" style="width: 200px; margin-bottom:0;">
+        </div>
+        <ul id="notes-container" class="item-list"></ul>
+      </div>
+    </section>
+
+    <!-- TASKS SECTION -->
+    <section id="sec-tasks" class="section-page">
+      <div class="glass-card">
+        <h3>ADD NEW TASK</h3>
+        <input type="text" id="task-input" placeholder="Task description...">
+        <select id="task-priority">
+          <option value="low">Low Priority</option>
+          <option value="med" selected>Medium Priority</option>
+          <option value="high">High Priority</option>
+        </select>
+        <button onclick="createTask()">ADD TO MATRIX</button>
+      </div>
+
+      <div class="glass-card">
+        <h3>ACTIVE TASKS</h3>
+        <ul id="tasks-container" class="item-list" style="margin-top:15px;"></ul>
+      </div>
+    </section>
+
+    <!-- MEMORY SECTION -->
+    <section id="sec-memory" class="section-page">
+      <div class="glass-card">
+        <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
+          <h3>RAW DATABASE (`jarvis_data.json`)</h3>
+          <button onclick="syncToDrive()">MANUAL PUSH TO DRIVE</button>
+        </div>
+        <pre id="raw-json-view" style="background:rgba(0,0,0,0.5); padding:15px; border-radius:6px; font-family:monospace; color:var(--primary-cyan); max-height:400px; overflow:auto;"></pre>
+      </div>
+    </section>
+
+    <!-- SETTINGS SECTION -->
+    <section id="sec-settings" class="section-page">
+      <div class="glass-card">
+        <h3>CONFIGURATION</h3>
+        <label style="display:block; margin: 15px 0 5px;">Wake Word</label>
+        <input type="text" id="setting-wakeword" value="jarvis">
+        <label style="display:block; margin: 15px 0 5px;">Google OAuth Client ID</label>
+        <input type="text" id="setting-clientid" placeholder="Enter your GCP OAuth Client ID">
+        <button onclick="saveSettings()">UPDATE SETTINGS</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // -------------------------------------------------------------
+    // SYSTEM STATE ENGINE
+    // -------------------------------------------------------------
+    let jarvisData = {
+      notes: [],
+      tasks: [],
+      research: [],
+      settings: { wakeWord: "jarvis" },
+      conversations: []
+    };
+
+    let driveFileId = null;
+    let tokenClient = null;
+    let accessToken = null;
+
+    let recognition = null;
+    let isListening = false;
+    let isMuted = false;
+
+    const CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+    const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+
+    // -------------------------------------------------------------
+    // INITIALIZATION & AUTH (GOOGLE DRIVE API)
+    // -------------------------------------------------------------
+    window.onload = () => {
+      initSpeech();
+      updateUI();
+    };
+
+    function handleAuthClick() {
+      if (!tokenClient) {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: localStorage.getItem('jarvis_client_id') || CLIENT_ID,
+          scope: SCOPES,
+          callback: async (resp) => {
+            if (resp.error) return;
+            accessToken = resp.access_token;
+            document.getElementById('drive-status-ind').classList.add('online');
+            document.getElementById('drive-status-text').innerText = 'DRIVE ONLINE';
+            document.getElementById('auth-btn').innerText = 'SYNCED';
+            speak("Google Drive authorization successful. Syncing persistent memory.");
+            await loadFromDrive();
+          },
+        });
+      }
+      tokenClient.requestAccessToken({ prompt: 'consent' });
+    }
+
+    async function loadFromDrive() {
+      try {
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=name='jarvis_data.json' and trashed=false`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const data = await res.json();
+
+        if (data.files && data.files.length > 0) {
+          driveFileId = data.files[0].id;
+          const contentRes = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+          jarvisData = await contentRes.json();
+        } else {
+          await syncToDrive(true);
+        }
+        updateUI();
+      } catch (err) {
+        console.error("Drive Sync Error:", err);
+      }
+    }
+
+    async function syncToDrive(createNew = false) {
+      if (!accessToken) return;
+      const fileContent = JSON.stringify(jarvisData, null, 2);
+
+      if (createNew || !driveFileId) {
+        const metadata = { name: 'jarvis_data.json', mimeType: 'application/json' };
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+        const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: form
+        });
+        const file = await res.json();
+        driveFileId = file.id;
+      } else {
+        await fetch(`https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: fileContent
+        });
+      }
+      updateUI();
+    }
+
+    // -------------------------------------------------------------
+    // SPEECH ENGINE (WEB SPEECH API)
+    // -------------------------------------------------------------
+    function initSpeech() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return alert("Web Speech API not supported in this browser.");
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        isListening = true;
+        document.getElementById('hud-ring').classList.add('listening');
+        document.getElementById('mic-status-text').innerText = 'LISTENING';
+      };
+
+      recognition.onend = () => {
+        if (isListening && !isMuted) recognition.start();
+      };
+
+      recognition.onresult = (e) => {
+        const transcript = e.results[e.results.length - 1][0].transcript.trim().toLowerCase();
+        document.getElementById('voice-transcript').innerText = `"${transcript}"`;
+        processCommand(transcript);
+      };
+    }
+
+    function toggleVoiceListening() {
+      if (!recognition) return;
+      if (isListening) {
+        recognition.stop();
+        isListening = false;
+        document.getElementById('hud-ring').classList.remove('listening');
+        document.getElementById('mic-status-text').innerText = 'OFFLINE';
+      } else {
+        recognition.start();
+      }
+    }
+
+    function toggleMute() {
+      isMuted = !isMuted;
+      document.getElementById('mute-btn').innerText = isMuted ? 'UNMUTE MIC' : 'MUTE MIC';
+      if (isMuted && isListening) recognition.stop();
+    }
+
+    function speak(text) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.pitch = 0.9;
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    // -------------------------------------------------------------
+    // COMMAND PARSER & EXECUTION
+    // -------------------------------------------------------------
+    function processCommand(cmd) {
+      const wakeWord = jarvisData.settings.wakeWord || "jarvis";
+      if (!cmd.includes(wakeWord)) return;
+
+      logCommand(cmd);
+      const action = cmd.replace(wakeWord, '').trim();
+
+      if (action.startsWith("save note") || action.startsWith("add note")) {
+        const content = action.replace(/^(save note|add note)/, '').trim();
+        if (content) {
+          jarvisData.notes.push({ id: Date.now(), title: "Voice Note", body: content, date: new Date().toLocaleDateString() });
+          speak("I have saved your note.");
+          syncToDrive();
+        }
+      } else if (action.includes("show notes")) {
+        switchSection('notes');
+        speak("Displaying notes interface.");
+      } else if (action.startsWith("add task")) {
+        const taskText = action.replace("add task", '').trim();
+        if (taskText) {
+          jarvisData.tasks.push({ id: Date.now(), text: taskText, priority: "med", completed: false });
+          speak(`Task added: ${taskText}`);
+          syncToDrive();
+        }
+      } else if (action.startsWith("complete task")) {
+        const taskText = action.replace("complete task", '').trim();
+        const task = jarvisData.tasks.find(t => t.text.toLowerCase().includes(taskText));
+        if (task) {
+          task.completed = true;
+          speak(`Task marked complete.`);
+          syncToDrive();
+        } else {
+          speak("Task not found in active matrix.");
+        }
+      } else {
+        speak("Command recognized, but action is undefined.");
+      }
+    }
+
+    function logCommand(cmd) {
+      jarvisData.conversations.unshift({ time: new Date().toLocaleTimeString(), cmd });
+      renderLogs();
+    }
+
+    // -------------------------------------------------------------
+    // CRUD DATA OPERATIONS & UI UPDATES
+    // -------------------------------------------------------------
+    function createNote() {
+      const title = document.getElementById('note-title-input').value;
+      const body = document.getElementById('note-body-input').value;
+      if (!title || !body) return;
+
+      jarvisData.notes.push({ id: Date.now(), title, body, date: new Date().toLocaleDateString() });
+      document.getElementById('note-title-input').value = '';
+      document.getElementById('note-body-input').value = '';
+      syncToDrive();
+    }
+
+    function deleteNote(id) {
+      jarvisData.notes = jarvisData.notes.filter(n => n.id !== id);
+      syncToDrive();
+    }
+
+    function createTask() {
+      const text = document.getElementById('task-input').value;
+      const priority = document.getElementById('task-priority').value;
+      if (!text) return;
+
+      jarvisData.tasks.push({ id: Date.now(), text, priority, completed: false });
+      document.getElementById('task-input').value = '';
+      syncToDrive();
+    }
+
+    function deleteTask(id) {
+      jarvisData.tasks = jarvisData.tasks.filter(t => t.id !== id);
+      syncToDrive();
+    }
+
+    function toggleTask(id) {
+      const task = jarvisData.tasks.find(t => t.id === id);
+      if (task) task.completed = !task.completed;
+      syncToDrive();
+    }
+
+    function saveSettings() {
+      jarvisData.settings.wakeWord = document.getElementById('setting-wakeword').value;
+      const clientIdInput = document.getElementById('setting-clientid').value;
+      if (clientIdInput) localStorage.setItem('jarvis_client_id', clientIdInput);
+      speak("System settings updated.");
+      syncToDrive();
+    }
+
+    function updateUI() {
+      renderNotes();
+      renderTasks();
+      renderLogs();
+      document.getElementById('raw-json-view').innerText = JSON.stringify(jarvisData, null, 2);
+    }
+
+    function renderNotes() {
+      const search = document.getElementById('note-search').value.toLowerCase();
+      const container = document.getElementById('notes-container');
+      container.innerHTML = '';
+
+      jarvisData.notes
+        .filter(n => n.title.toLowerCase().includes(search) || n.body.toLowerCase().includes(search))
+        .forEach(n => {
+          container.innerHTML += `
+            <li class="item-card">
+              <div>
+                <strong>${n.title}</strong> <small style="color:var(--text-muted)">(${n.date})</small>
+                <p style="font-size:0.9rem; color:var(--text-muted);">${n.body}</p>
+              </div>
+              <button onclick="deleteNote(${n.id})">DELETE</button>
+            </li>`;
+        });
+    }
+
+    function renderTasks() {
+      const container = document.getElementById('tasks-container');
+      container.innerHTML = '';
+
+      jarvisData.tasks.forEach(t => {
+        container.innerHTML += `
+          <li class="item-card priority-${t.priority}" style="${t.completed ? 'opacity:0.5; text-decoration:line-through;' : ''}">
+            <span>${t.text}</span>
+            <div>
+              <button onclick="toggleTask(${t.id})">${t.completed ? 'UNDO' : 'DONE'}</button>
+              <button onclick="deleteTask(${t.id})">DELETE</button>
+            </div>
+          </li>`;
+      });
+    }
+
+    function renderLogs() {
+      const container = document.getElementById('command-log');
+      container.innerHTML = jarvisData.conversations.map(c => `
+        <li style="font-size:0.85rem; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.05)">
+          <span style="color:var(--primary-cyan)">[${c.time}]</span> ${c.cmd}
+        </li>
+      `).join('');
+    }
+
+    function switchSection(id) {
+      document.querySelectorAll('.section-page').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      
+      document.getElementById(`sec-${id}`).classList.add('active');
+      document.getElementById('page-title').innerText = `${id.toUpperCase()} MODULE`;
+    }
+  </script>
+</body>
+</html>
